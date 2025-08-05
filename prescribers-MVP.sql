@@ -62,16 +62,18 @@ LIMIT 1;
 -- c. Challenge Question: Are there any specialties that appear in the prescriber table that have no associated prescriptions in the prescription table?
 SELECT DISTINCT
 	specialty_description,
-	COUNT(npi)
+	COUNT(
+		CASE 
+			WHEN npi IN(
+				SELECT DISTINCT npi
+				FROM prescription
+				) THEN npi
+		END
+	) AS prescription_count
 FROM 
 	prescriber
-WHERE 
-	npi IN (
-		SELECT DISTINCT npi
-		FROM prescription
-	)
 GROUP BY specialty_description
-ORDER BY COUNT(npi);
+ORDER BY prescription_count;
 	
 -- d. Difficult Bonus: Do not attempt until you have solved all other problems! For each specialty, report the percentage of total claims by that specialty which are for opioids. Which specialties have a high percentage of opioids?
 WITH claims AS (
@@ -98,19 +100,25 @@ ORDER BY specialty_description;
 -- Question 3
 -- a. Which drug (generic_name) had the highest total drug cost?
 SELECT 
-	drug_name,
-	total_drug_cost
-FROM prescription
-GROUP BY drug_name, total_drug_cost
-ORDER by total_drug_cost DESC
+	generic_name,
+	SUM(total_drug_cost) AS total_cost
+FROM 
+	prescription
+INNER JOIN
+	drug
+	USING(drug_name)
+GROUP BY 
+	generic_name, total_drug_cost
+ORDER by total_cost DESC NULLS LAST
 LIMIT 1;
 
 -- b. Which drug (generic_name) has the hightest total cost per day? Bonus: Round your cost per day column to 2 decimal places. Google ROUND to see how this works.
 WITH cost_per_day AS (
 	SELECT 
 		drug_name,
-		(total_drug_cost / total_day_supply) AS daily_cost
+		ROUND((SUM(total_drug_cost) / SUM(total_day_supply)), 2) AS daily_cost
 	FROM prescription
+	GROUP BY drug_name
 	ORDER BY daily_cost DESC
 )
 SELECT 
@@ -163,8 +171,8 @@ WHERE
 	state = 'TN';
 
 -- b. Which cbsa has the largest combined population? Which has the smallest? Report the CBSA name and total population.
-SELECT 
-	cbsa,
+(SELECT 
+	cbsaname,
 	SUM(population) AS pop
 FROM 
 	cbsa
@@ -172,10 +180,24 @@ INNER JOIN
 	population
 	USING(fipscounty)
 GROUP BY 
-	cbsa
+	cbsaname
 ORDER BY 
 	pop DESC
-LIMIT 1;
+LIMIT 1)
+UNION
+(SELECT 
+	cbsaname,
+	SUM(population) AS pop
+FROM 
+	cbsa
+INNER JOIN 
+	population
+	USING(fipscounty)
+GROUP BY 
+	cbsaname
+ORDER BY 
+	pop 
+LIMIT 1)
 
 -- c. What is the largest (in terms of population) county which is not included in a CBSA? Report the county name and population.
 SELECT 
@@ -271,21 +293,21 @@ LEFT JOIN
 	prescription AS p2
 	USING(npi, drug_name)
 GROUP BY npi, drug_name
-ORDER BY claim_count DESC;
+ORDER BY claim_count DESC NULLS LAST;
 
 -- c. Finally, if you have not done so already, fill in any missing values for total_claim_count with 0. Hint - Google the COALESCE function.
 WITH pain_specialists AS (
-SELECT 
-	npi,
-	drug_name
-FROM 
-	drug
-CROSS JOIN 
-	prescriber
-WHERE 
-	specialty_description = 'Pain Management'
-	AND nppes_provider_city = 'NASHVILLE'
-	AND opioid_drug_flag = 'Y'
+	SELECT 
+		npi,
+		drug_name
+	FROM 
+		drug
+	CROSS JOIN 
+		prescriber
+	WHERE 
+		specialty_description = 'Pain Management'
+		AND nppes_provider_city = 'NASHVILLE'
+		AND opioid_drug_flag = 'Y'
 )
 SELECT 
 	npi,
